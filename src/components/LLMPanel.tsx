@@ -166,12 +166,23 @@ export function LLMPanel({
     return null;
   }, [apiKey, selectedModel, onGetSuggestion]);
 
-  const runAutoMode = useCallback(async () => {
+  const runAutoMode = useCallback(async (isFirstRun: boolean = false) => {
     if (!autoModeRef.current) return;
     
     setIsAutoRunning(true);
     
-    // Step 1: Get command from LLM (try all models until one succeeds)
+    // Step 1: Wait for any previous command to complete first (skip on first run)
+    if (!isFirstRun) {
+      toast.info('Waiting for previous command to complete...');
+      await onWaitForExecution();
+      
+      if (!autoModeRef.current) {
+        setIsAutoRunning(false);
+        return;
+      }
+    }
+    
+    // Step 2: Get command from LLM (try all models until one succeeds)
     toast.info('Fetching command suggestion from LLM...');
     const command = await tryGetSuggestionWithFallback();
     
@@ -189,7 +200,7 @@ export function LLMPanel({
 
     setSuggestion(command);
     
-    // Step 2: Wait 2 seconds before executing
+    // Step 3: Wait 2 seconds before executing
     toast.info('Command received. Waiting 2 seconds before execution...');
     await delay(2000);
     
@@ -198,22 +209,13 @@ export function LLMPanel({
       return;
     }
     
-    // Step 3: Execute the command
+    // Step 4: Execute the command
     toast.success(`Executing: ${command}`);
     onExecuteCommand(command);
     
-    // Step 4: Wait for command to complete (wait for terminal output to settle)
-    toast.info('Waiting for command to complete...');
-    await onWaitForExecution();
-    
-    if (!autoModeRef.current) {
-      setIsAutoRunning(false);
-      return;
-    }
-    
-    // Step 5: Continue auto mode loop
+    // Step 5: Continue auto mode loop (will wait for this command to complete at start of next iteration)
     setIsAutoRunning(false);
-    runAutoMode();
+    runAutoMode(false);
   }, [tryGetSuggestionWithFallback, onExecuteCommand, onWaitForExecution]);
 
   const handleToggleAutoMode = async () => {
@@ -233,7 +235,7 @@ export function LLMPanel({
       setIsAutoMode(true);
       autoModeRef.current = true;
       toast.success('Auto mode started');
-      runAutoMode();
+      runAutoMode(true);
     }
   };
 
