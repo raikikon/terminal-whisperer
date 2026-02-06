@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Terminal, writeToTerminal } from '@/components/Terminal';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { CommandInput } from '@/components/CommandInput';
@@ -13,9 +13,28 @@ const DEFAULT_BACKEND_URL = 'http://localhost:3001';
 
 const Index = () => {
   const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
+  const lastOutputTimeRef = useRef<number>(Date.now());
 
   const handleOutput = useCallback((data: string) => {
     writeToTerminal(data);
+    lastOutputTimeRef.current = Date.now(); // Track when we last received output
+  }, []);
+
+  // Wait for terminal output to settle (no new output for 3 seconds)
+  const waitForCommandCompletion = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      // Reset the timer since we just executed a command
+      lastOutputTimeRef.current = Date.now();
+      
+      const checkInterval = setInterval(() => {
+        const timeSinceLastOutput = Date.now() - lastOutputTimeRef.current;
+        // Wait until no output for 3 seconds
+        if (timeSinceLastOutput >= 3000) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 500);
+    });
   }, []);
 
   const handleConnected = useCallback((sessionId: string) => {
@@ -141,6 +160,7 @@ const Index = () => {
               onGetSuggestion={handleGetSuggestion}
               onClearHistory={handleClearHistory}
               onExecuteCommand={handleAutoExecuteCommand}
+              onWaitForExecution={waitForCommandCompletion}
               isLoading={isLoading}
               disabled={!isConnected}
             />
