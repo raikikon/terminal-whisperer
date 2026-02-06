@@ -120,6 +120,26 @@ export function useBackendApi(backendUrl: string) {
     }
   }, [backendUrl]);
 
+  const clearHistory = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${backendUrl}/api/history/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to clear history');
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [backendUrl]);
+
   return {
     isLoading,
     error,
@@ -129,5 +149,6 @@ export function useBackendApi(backendUrl: string) {
     getLLMSuggestion,
     getLastHistory,
     checkHealth,
+    clearHistory,
   };
 }
