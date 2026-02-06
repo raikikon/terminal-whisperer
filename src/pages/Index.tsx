@@ -48,6 +48,7 @@ const Index = () => {
     fetchFreeModels,
     getLLMSuggestion,
     checkHealth,
+    clearHistory,
   } = useBackendApi(backendUrl);
 
   const handleExecuteCommand = async (command: string) => {
@@ -62,6 +63,15 @@ const Index = () => {
   const handleGetSuggestion = async (apiKey: string, modelName: string) => {
     const result = await getLLMSuggestion(apiKey, modelName);
     return result;
+  };
+
+  const handleClearHistory = async () => {
+    await clearHistory();
+  };
+
+  const handleAutoExecuteCommand = (command: string) => {
+    // Send command directly to terminal via socket
+    sendInput(command + '\r');
   };
 
   const handleConnect = (url: string) => {
@@ -129,6 +139,8 @@ const Index = () => {
               models={models}
               onFetchModels={fetchFreeModels}
               onGetSuggestion={handleGetSuggestion}
+              onClearHistory={handleClearHistory}
+              onExecuteCommand={handleAutoExecuteCommand}
               isLoading={isLoading}
               disabled={!isConnected}
             />

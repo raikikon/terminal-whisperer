@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sparkles, Loader2, RefreshCw, Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { Sparkles, Loader2, RefreshCw, Eye, EyeOff, Copy, Check, Trash2, Play, Square } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface FreeModel {
@@ -22,12 +22,14 @@ interface FreeModel {
 
 interface LLMPanelProps {
   models: FreeModel[];
-  onFetchModels: () => Promise<void>;
+  onFetchModels: () => Promise<FreeModel[]>;
   onGetSuggestion: (apiKey: string, modelName: string) => Promise<{
     suggestedCommand: string;
     lastCommand: string;
     lastOutput: string;
   }>;
+  onClearHistory: () => Promise<void>;
+  onExecuteCommand: (command: string) => void;
   isLoading?: boolean;
   disabled?: boolean;
 }
@@ -36,6 +38,8 @@ export function LLMPanel({
   models,
   onFetchModels,
   onGetSuggestion,
+  onClearHistory,
+  onExecuteCommand,
   isLoading,
   disabled,
 }: LLMPanelProps) {
@@ -45,12 +49,21 @@ export function LLMPanel({
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [isAutoMode, setIsAutoMode] = useState(false);
+  const [isAutoRunning, setIsAutoRunning] = useState(false);
+  const autoModeRef = useRef(false);
+  const modelsRef = useRef<FreeModel[]>([]);
 
   useEffect(() => {
     if (models.length > 0 && !selectedModel) {
       setSelectedModel(models[0].id);
     }
+    modelsRef.current = models;
   }, [models, selectedModel]);
+
+  useEffect(() => {
+    autoModeRef.current = isAutoMode;
+  }, [isAutoMode]);
 
   const handleFetchModels = async () => {
     setIsLoadingModels(true);
@@ -79,12 +92,133 @@ export function LLMPanel({
     }
   };
 
-  const handleCopySuggestion = async () => {
-    if (suggestion) {
+  const handleCopySuggestion = useCallback(async () => {
+    if (!suggestion) return;
+    try {
       await navigator.clipboard.writeText(suggestion);
       setCopied(true);
       toast.success('Copied to clipboard');
       setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      // Fallback for browsers that don't support clipboard API
+      const textArea = document.createElement('textarea');
+      textArea.value = suggestion;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopied(true);
+        toast.success('Copied to clipboard');
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        toast.error('Failed to copy to clipboard');
+      }
+      document.body.removeChild(textArea);
+    }
+  }, [suggestion]);
+
+  const handleClearHistory = async () => {
+    try {
+      await onClearHistory();
+      setSuggestion(null);
+      toast.success('History cleared');
+    } catch {
+      toast.error('Failed to clear history');
+    }
+  };
+
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const tryGetSuggestionWithFallback = useCallback(async (): Promise<string | null> => {
+    const currentModels = modelsRef.current;
+    if (!apiKey || currentModels.length === 0) {
+      toast.error('Please enter API key and load models first');
+      return null;
+    }
+
+    // Try selected model first
+    const modelOrder = [
+      selectedModel,
+      ...currentModels.filter(m => m.id !== selectedModel).map(m => m.id)
+    ].filter(Boolean);
+
+    for (const modelId of modelOrder) {
+      if (!autoModeRef.current) return null; // Stop if auto mode disabled
+      
+      try {
+        toast.info(`Trying model: ${currentModels.find(m => m.id === modelId)?.name || modelId}`);
+        const result = await onGetSuggestion(apiKey, modelId);
+        if (result.suggestedCommand) {
+          setSelectedModel(modelId);
+          return result.suggestedCommand;
+        }
+      } catch (err) {
+        console.error(`Model ${modelId} failed:`, err);
+        continue;
+      }
+    }
+
+    toast.error('All models failed to provide a suggestion');
+    return null;
+  }, [apiKey, selectedModel, onGetSuggestion]);
+
+  const runAutoMode = useCallback(async () => {
+    if (!autoModeRef.current) return;
+    
+    setIsAutoRunning(true);
+    toast.info('Auto mode: Waiting 2 seconds before fetching suggestion...');
+    
+    await delay(2000);
+    
+    if (!autoModeRef.current) {
+      setIsAutoRunning(false);
+      return;
+    }
+
+    const command = await tryGetSuggestionWithFallback();
+    
+    if (!autoModeRef.current) {
+      setIsAutoRunning(false);
+      return;
+    }
+
+    if (command) {
+      setSuggestion(command);
+      toast.success(`Executing: ${command}`);
+      onExecuteCommand(command);
+      
+      // Continue auto mode after execution
+      if (autoModeRef.current) {
+        runAutoMode();
+      }
+    } else {
+      setIsAutoMode(false);
+      toast.error('Auto mode stopped: Could not get suggestion');
+    }
+    
+    setIsAutoRunning(false);
+  }, [tryGetSuggestionWithFallback, onExecuteCommand]);
+
+  const handleToggleAutoMode = async () => {
+    if (isAutoMode) {
+      setIsAutoMode(false);
+      autoModeRef.current = false;
+      toast.info('Auto mode stopped');
+    } else {
+      if (!apiKey) {
+        toast.error('Please enter API key first');
+        return;
+      }
+      if (models.length === 0) {
+        toast.error('Please load models first');
+        return;
+      }
+      setIsAutoMode(true);
+      autoModeRef.current = true;
+      toast.success('Auto mode started');
+      runAutoMode();
     }
   };
 
@@ -162,17 +296,48 @@ export function LLMPanel({
           </Select>
         </div>
 
+        <div className="flex gap-2">
+          <Button
+            onClick={handleGetSuggestion}
+            disabled={!apiKey || !selectedModel || isLoading || disabled || isAutoMode}
+            className="flex-1 gap-2"
+          >
+            {isLoading && !isAutoRunning ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            Get Suggestion
+          </Button>
+          
+          <Button
+            onClick={handleToggleAutoMode}
+            disabled={disabled}
+            variant={isAutoMode ? "destructive" : "secondary"}
+            className="gap-2"
+          >
+            {isAutoMode ? (
+              <>
+                <Square className="h-4 w-4" />
+                Stop
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4" />
+                Auto
+              </>
+            )}
+          </Button>
+        </div>
+
         <Button
-          onClick={handleGetSuggestion}
-          disabled={!apiKey || !selectedModel || isLoading || disabled}
+          onClick={handleClearHistory}
+          disabled={isLoading || disabled}
+          variant="outline"
           className="w-full gap-2"
         >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4" />
-          )}
-          Get Next Command Suggestion
+          <Trash2 className="h-4 w-4" />
+          Clear History
         </Button>
 
         {suggestion && (
