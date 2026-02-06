@@ -13,28 +13,13 @@ const DEFAULT_BACKEND_URL = 'http://localhost:3001';
 
 const Index = () => {
   const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
-  const lastOutputTimeRef = useRef<number>(Date.now());
 
   const handleOutput = useCallback((data: string) => {
     writeToTerminal(data);
-    lastOutputTimeRef.current = Date.now(); // Track when we last received output
   }, []);
 
-  // Wait for terminal output to settle (no new output for 3 seconds)
-  const waitForCommandCompletion = useCallback((): Promise<void> => {
-    return new Promise((resolve) => {
-      // Reset the timer since we just executed a command
-      lastOutputTimeRef.current = Date.now();
-      
-      const checkInterval = setInterval(() => {
-        const timeSinceLastOutput = Date.now() - lastOutputTimeRef.current;
-        // Wait until no output for 3 seconds
-        if (timeSinceLastOutput >= 3000) {
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 500);
-    });
+  const handleCommandEnd = useCallback(() => {
+    console.log('Command execution completed (received [COMMAND_END])');
   }, []);
 
   const handleConnected = useCallback((sessionId: string) => {
@@ -52,12 +37,13 @@ const Index = () => {
     writeToTerminal(`\r\n\x1b[33m⚠ Terminal process exited (code: ${exitCode})\x1b[0m\r\n`);
   }, []);
 
-  const { isConnected, sessionId, sendInput, resize } = useTerminalSocket({
+  const { isConnected, sessionId, sendInput, resize, waitForCommandEnd } = useTerminalSocket({
     backendUrl,
     onOutput: handleOutput,
     onConnected: handleConnected,
     onDisconnected: handleDisconnected,
     onTerminalClosed: handleTerminalClosed,
+    onCommandEnd: handleCommandEnd,
   });
 
   const {
@@ -160,7 +146,7 @@ const Index = () => {
               onGetSuggestion={handleGetSuggestion}
               onClearHistory={handleClearHistory}
               onExecuteCommand={handleAutoExecuteCommand}
-              onWaitForExecution={waitForCommandCompletion}
+              onWaitForExecution={waitForCommandEnd}
               isLoading={isLoading}
               disabled={!isConnected}
             />

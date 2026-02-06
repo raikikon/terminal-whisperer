@@ -7,6 +7,7 @@ interface UseTerminalSocketOptions {
   onConnected: (sessionId: string) => void;
   onDisconnected: () => void;
   onTerminalClosed: (exitCode: number) => void;
+  onCommandEnd?: () => void;
 }
 
 export function useTerminalSocket({
@@ -15,10 +16,12 @@ export function useTerminalSocket({
   onConnected,
   onDisconnected,
   onTerminalClosed,
+  onCommandEnd,
 }: UseTerminalSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const commandEndResolverRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const socket = io(backendUrl, {
@@ -41,7 +44,22 @@ export function useTerminalSocket({
     });
 
     socket.on('terminal-output', (data: string) => {
-      onOutput(data);
+      // Check if output contains command end signal
+      if (data.includes('[COMMAND_END]')) {
+        // Remove the signal from output before displaying
+        const cleanedData = data.replace(/\[COMMAND_END\]/g, '');
+        if (cleanedData) {
+          onOutput(cleanedData);
+        }
+        // Resolve any waiting promise
+        if (commandEndResolverRef.current) {
+          commandEndResolverRef.current();
+          commandEndResolverRef.current = null;
+        }
+        onCommandEnd?.();
+      } else {
+        onOutput(data);
+      }
     });
 
     socket.on('terminal-closed', (data: { exitCode: number }) => {
@@ -61,7 +79,7 @@ export function useTerminalSocket({
     return () => {
       socket.disconnect();
     };
-  }, [backendUrl, onOutput, onConnected, onDisconnected, onTerminalClosed]);
+  }, [backendUrl, onOutput, onConnected, onDisconnected, onTerminalClosed, onCommandEnd]);
 
   const sendInput = useCallback((input: string) => {
     if (socketRef.current?.connected) {
@@ -75,10 +93,17 @@ export function useTerminalSocket({
     }
   }, []);
 
+  const waitForCommandEnd = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      commandEndResolverRef.current = resolve;
+    });
+  }, []);
+
   return {
     isConnected,
     sessionId,
     sendInput,
     resize,
+    waitForCommandEnd,
   };
 }
