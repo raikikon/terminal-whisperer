@@ -30,6 +30,7 @@ interface LLMPanelProps {
   }>;
   onClearHistory: () => Promise<void>;
   onExecuteCommand: (command: string) => void;
+  onWaitForExecution: () => Promise<void>;
   isLoading?: boolean;
   disabled?: boolean;
 }
@@ -40,6 +41,7 @@ export function LLMPanel({
   onGetSuggestion,
   onClearHistory,
   onExecuteCommand,
+  onWaitForExecution,
   isLoading,
   disabled,
 }: LLMPanelProps) {
@@ -168,15 +170,9 @@ export function LLMPanel({
     if (!autoModeRef.current) return;
     
     setIsAutoRunning(true);
-    toast.info('Auto mode: Waiting 2 seconds before fetching suggestion...');
     
-    await delay(2000);
-    
-    if (!autoModeRef.current) {
-      setIsAutoRunning(false);
-      return;
-    }
-
+    // Step 1: Get command from LLM (try all models until one succeeds)
+    toast.info('Fetching command suggestion from LLM...');
     const command = await tryGetSuggestionWithFallback();
     
     if (!autoModeRef.current) {
@@ -184,22 +180,41 @@ export function LLMPanel({
       return;
     }
 
-    if (command) {
-      setSuggestion(command);
-      toast.success(`Executing: ${command}`);
-      onExecuteCommand(command);
-      
-      // Continue auto mode after execution
-      if (autoModeRef.current) {
-        runAutoMode();
-      }
-    } else {
+    if (!command) {
       setIsAutoMode(false);
-      toast.error('Auto mode stopped: Could not get suggestion');
+      setIsAutoRunning(false);
+      toast.error('Auto mode stopped: Could not get suggestion from any model');
+      return;
+    }
+
+    setSuggestion(command);
+    
+    // Step 2: Wait 2 seconds before executing
+    toast.info('Command received. Waiting 2 seconds before execution...');
+    await delay(2000);
+    
+    if (!autoModeRef.current) {
+      setIsAutoRunning(false);
+      return;
     }
     
+    // Step 3: Execute the command
+    toast.success(`Executing: ${command}`);
+    onExecuteCommand(command);
+    
+    // Step 4: Wait for command to complete (wait for terminal output to settle)
+    toast.info('Waiting for command to complete...');
+    await onWaitForExecution();
+    
+    if (!autoModeRef.current) {
+      setIsAutoRunning(false);
+      return;
+    }
+    
+    // Step 5: Continue auto mode loop
     setIsAutoRunning(false);
-  }, [tryGetSuggestionWithFallback, onExecuteCommand]);
+    runAutoMode();
+  }, [tryGetSuggestionWithFallback, onExecuteCommand, onWaitForExecution]);
 
   const handleToggleAutoMode = async () => {
     if (isAutoMode) {
