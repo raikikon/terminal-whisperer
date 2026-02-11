@@ -5,10 +5,7 @@ interface FreeModel {
   name: string;
   description?: string;
   context_length?: number;
-  pricing?: {
-    prompt: string;
-    completion: string;
-  };
+  created?: number;
 }
 
 interface LLMSuggestionResponse {
@@ -17,6 +14,7 @@ interface LLMSuggestionResponse {
   lastOutput: string;
   suggestedCommand: string;
   model: string;
+  baseUrl?: string;
   error?: string;
 }
 
@@ -51,11 +49,15 @@ export function useBackendApi(backendUrl: string) {
     }
   }, [backendUrl]);
 
-  const fetchFreeModels = useCallback(async () => {
+  const fetchModels = useCallback(async (apiBaseUrl: string, apiKey?: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${backendUrl}/api/models/free`);
+      const response = await fetch(`${backendUrl}/api/models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: apiBaseUrl, apiKey }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to fetch models');
       setModels(data.models || []);
@@ -70,6 +72,7 @@ export function useBackendApi(backendUrl: string) {
   }, [backendUrl]);
 
   const getLLMSuggestion = useCallback(async (
+    apiBaseUrl: string,
     apiKey: string,
     modelName: string
   ): Promise<LLMSuggestionResponse> => {
@@ -79,7 +82,7 @@ export function useBackendApi(backendUrl: string) {
       const response = await fetch(`${backendUrl}/api/llm/suggest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey, modelName }),
+        body: JSON.stringify({ baseUrl: apiBaseUrl, apiKey, modelName }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to get suggestion');
@@ -145,7 +148,7 @@ export function useBackendApi(backendUrl: string) {
     error,
     models,
     executeCommand,
-    fetchFreeModels,
+    fetchModels,
     getLLMSuggestion,
     getLastHistory,
     checkHealth,

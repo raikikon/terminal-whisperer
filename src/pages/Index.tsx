@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { Terminal, writeToTerminal } from '@/components/Terminal';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { CommandInput } from '@/components/CommandInput';
@@ -50,7 +50,7 @@ const Index = () => {
     isLoading,
     models,
     executeCommand,
-    fetchFreeModels,
+    fetchModels,
     getLLMSuggestion,
     checkHealth,
     clearHistory,
@@ -65,9 +65,12 @@ const Index = () => {
     }
   };
 
-  const handleGetSuggestion = async (apiKey: string, modelName: string) => {
-    const result = await getLLMSuggestion(apiKey, modelName);
-    return result;
+  const handleFetchModels = async (baseUrl: string, apiKey?: string) => {
+    return await fetchModels(baseUrl, apiKey);
+  };
+
+  const handleGetSuggestion = async (baseUrl: string, apiKey: string, modelName: string) => {
+    return await getLLMSuggestion(baseUrl, apiKey, modelName);
   };
 
   const handleClearHistory = async () => {
@@ -75,7 +78,6 @@ const Index = () => {
   };
 
   const handleAutoExecuteCommand = (command: string) => {
-    // Send command directly to terminal via socket
     sendInput(command + '\r');
   };
 
@@ -86,7 +88,6 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -103,10 +104,8 @@ const Index = () => {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Terminal Section */}
           <div className="lg:col-span-2 space-y-4">
             <div className="rounded-lg border border-border overflow-hidden">
               <div className="bg-card px-4 py-2 border-b border-border flex items-center gap-2">
@@ -115,9 +114,7 @@ const Index = () => {
                   <div className="w-3 h-3 rounded-full bg-yellow-500" />
                   <div className="w-3 h-3 rounded-full bg-green-500" />
                 </div>
-                <span className="text-sm text-muted-foreground ml-2">
-                  Terminal Session
-                </span>
+                <span className="text-sm text-muted-foreground ml-2">Terminal Session</span>
               </div>
               <div className="h-[500px]">
                 <Terminal onInput={sendInput} onResize={resize} />
@@ -131,7 +128,6 @@ const Index = () => {
             />
           </div>
 
-          {/* Side Panel */}
           <div className="space-y-4">
             <BackendConfig
               currentUrl={backendUrl}
@@ -142,7 +138,7 @@ const Index = () => {
 
             <LLMPanel
               models={models}
-              onFetchModels={fetchFreeModels}
+              onFetchModels={handleFetchModels}
               onGetSuggestion={handleGetSuggestion}
               onClearHistory={handleClearHistory}
               onExecuteCommand={handleAutoExecuteCommand}
