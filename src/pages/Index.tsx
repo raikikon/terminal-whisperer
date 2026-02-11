@@ -8,6 +8,7 @@ import { useTerminalSocket } from '@/hooks/useTerminalSocket';
 import { useBackendApi } from '@/hooks/useBackendApi';
 import { toast } from 'sonner';
 import { TerminalSquare, Shield } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const DEFAULT_BACKEND_URL = 'http://localhost:3001';
 
@@ -100,7 +101,10 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">AI-Powered Security Research Tool</p>
             </div>
           </div>
-          <ConnectionStatus isConnected={isConnected} sessionId={sessionId} />
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <ConnectionStatus isConnected={isConnected} sessionId={sessionId} />
+          </div>
         </div>
       </header>
 
